@@ -189,7 +189,7 @@ jobs:
 
   publish:
     needs: [check-updates, build]
-    if: needs.check-updates.outputs.should_build == 'true' && (github.event.inputs.publish_npm == 'true' || github.event_name == 'schedule')
+    if: needs.check-updates.outputs.should_build == 'true' && (github.event.inputs.publish_npm == 'true' || github.event_name == 'schedule' || github.event_name == 'push')
     runs-on: ubuntu-latest
     
     steps:
