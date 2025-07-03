@@ -106,13 +106,16 @@ jobs:
         mkdir -p src temp
         cd temp
         
-        # 克隆源仓库的特定路径
-        git clone --depth 1 --filter=blob:none --sparse https://github.com/${{ env.SOURCE_REPO }}.git
+        # 克隆整个仓库（因为 api-client 依赖于 @core 模块）
+        git clone --depth 1 https://github.com/${{ env.SOURCE_REPO }}.git
         cd core
-        git sparse-checkout set ${{ env.SOURCE_PATH }}
         
-        # 复制源码到构建目录
+        # 复制 api-client 源码
         cp -r ${{ env.SOURCE_PATH }}/* ../../src/
+        
+        # 复制必要的核心依赖
+        mkdir -p ../../src/node_modules/@core
+        cp -r apps/core/src/* ../../src/node_modules/@core/
         
         # 清理临时文件
         cd ../../
