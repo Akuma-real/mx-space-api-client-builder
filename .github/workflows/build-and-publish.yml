@@ -147,8 +147,8 @@ jobs:
         cd src
         # 安装项目依赖
         pnpm install
-        # 确保 TypeScript 可用（tsup 需要）
-        pnpm add -D typescript
+        # 确保 TypeScript 和测试依赖可用
+        pnpm add -D typescript vite-tsconfig-paths
 
     - name: 运行测试
       run: |
@@ -230,14 +230,22 @@ jobs:
       with:
         name: api-client-package
         path: package/
+- name: 发布到 GitHub Packages
+  run: |
+    cd package
+    # 修改 package.json 以发布到 GitHub Packages
+    npm pkg set name="@adminlaowang/mx-space-api-client"
+    npm pkg set repository.url="git+https://github.com/Akuma-real/mx-space-api-client-builder.git"
+    npm pkg set publishConfig.registry="https://npm.pkg.github.com"
+    
+    # 配置 npm 认证
+    echo "//npm.pkg.github.com/:_authToken=${{ secrets.GITHUB_TOKEN }}" > .npmrc
+    echo "@adminlaowang:registry=https://npm.pkg.github.com" >> .npmrc
+    
+    npm publish
+  env:
+    NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: 发布到 NPM
-      if: env.NPM_TOKEN != ''
-      run: |
-        cd package
-        npm publish --access public
-      env:
-        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
     - name: 创建 Release
       run: |
