@@ -118,14 +118,6 @@ jobs:
         cd ../../
         rm -rf temp
 
-    - name: 修复 Windows 兼容性
-      run: |
-        cd src
-        # 修复 package.json 中的 Windows 不兼容命令
-        sed -i 's/rm -rf dist/rmdir \/s \/q dist 2>nul || echo ""/g' package.json
-        sed -i 's/&& tsup/ \&\& npx tsup/g' package.json
-        sed -i 's/&& node/ \&\& node/g' package.json
-
     - name: 安装依赖
       run: |
         cd src
