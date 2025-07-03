@@ -83,7 +83,7 @@ jobs:
     
     strategy:
       matrix:
-        node-version: [18.x, 20.x]
+        node-version: [20.x]
 
     steps:
     - name: 检出当前仓库
@@ -102,8 +102,8 @@ jobs:
 
     - name: 下载源码
       run: |
-        # 创建临时目录
-        mkdir -p temp
+        # 创建必要的目录
+        mkdir -p src temp
         cd temp
         
         # 克隆源仓库的特定路径
