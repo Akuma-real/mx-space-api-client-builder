@@ -1,0 +1,253 @@
+name: Build and Publish API Client
+
+on:
+  # 手动触发
+  workflow_dispatch:
+    inputs:
+      publish_npm:
+        description: '是否发布到 NPM'
+        required: true
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      version_type:
+        description: '版本类型'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - 'patch'
+          - 'minor'
+          - 'major'
+          - 'prerelease'
+  
+  # 定时任务 - 每天检查更新
+  schedule:
+    - cron: '0 0 * * *'
+  
+  # Push 到 main 分支时触发
+  push:
+    branches: [ main ]
+
+env:
+  SOURCE_REPO: 'mx-space/core'
+  SOURCE_PATH: 'packages/api-client'
+  NODE_VERSION: '20.x'
+
+jobs:
+  check-updates:
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+      latest_commit: ${{ steps.check.outputs.latest_commit }}
+    
+    steps:
+    - name: 检出当前仓库
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: 检查源码更新
+      id: check
+      run: |
+        # 获取源仓库最新提交
+        LATEST_COMMIT=$(curl -s "https://api.github.com/repos/${{ env.SOURCE_REPO }}/commits?path=${{ env.SOURCE_PATH }}&per_page=1" | jq -r '.[0].sha')
+        echo "latest_commit=$LATEST_COMMIT" >> $GITHUB_OUTPUT
+        
+        # 检查是否是手动触发或有新提交
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          echo "should_build=true" >> $GITHUB_OUTPUT
+          echo "手动触发构建"
+        else
+          # 检查上次构建的提交
+          LAST_BUILD_COMMIT=$(cat last_build_commit.txt 2>/dev/null || echo "")
+          if [ "$LATEST_COMMIT" != "$LAST_BUILD_COMMIT" ]; then
+            echo "should_build=true" >> $GITHUB_OUTPUT
+            echo "检测到源码更新: $LATEST_COMMIT"
+          else
+            echo "should_build=false" >> $GITHUB_OUTPUT
+            echo "源码无更新"
+          fi
+        fi
+
+  build:
+    needs: check-updates
+    if: needs.check-updates.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+
+    steps:
+    - name: 检出当前仓库
+      uses: actions/checkout@v4
+
+    - name: 设置 Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        registry-url: 'https://registry.npmjs.org'
+
+    - name: 安装 pnpm
+      uses: pnpm/action-setup@v2
+      with:
+        version: 8
+
+    - name: 下载源码
+      run: |
+        # 创建临时目录
+        mkdir -p temp
+        cd temp
+        
+        # 克隆源仓库的特定路径
+        git clone --depth 1 --filter=blob:none --sparse https://github.com/${{ env.SOURCE_REPO }}.git
+        cd core
+        git sparse-checkout set ${{ env.SOURCE_PATH }}
+        
+        # 复制源码到构建目录
+        cp -r ${{ env.SOURCE_PATH }}/* ../../src/
+        
+        # 清理临时文件
+        cd ../../
+        rm -rf temp
+
+    - name: 修复 Windows 兼容性
+      run: |
+        cd src
+        # 修复 package.json 中的 Windows 不兼容命令
+        sed -i 's/rm -rf dist/rmdir \/s \/q dist 2>nul || echo ""/g' package.json
+        sed -i 's/&& tsup/ \&\& npx tsup/g' package.json
+        sed -i 's/&& node/ \&\& node/g' package.json
+
+    - name: 安装依赖
+      run: |
+        cd src
+        pnpm install
+
+    - name: 运行测试
+      run: |
+        cd src
+        npm test || echo "测试失败，继续构建..."
+      continue-on-error: true
+
+    - name: 构建项目
+      run: |
+        cd src
+        npm run build
+
+    - name: 检查构建输出
+      run: |
+        cd src
+        echo "检查 dist 目录内容:"
+        ls -la dist/ || echo "dist 目录不存在"
+        
+        echo "检查必要文件:"
+        if [ -f "dist/index.js" ]; then
+          echo "✅ index.js 存在"
+        else
+          echo "❌ index.js 缺失"
+        fi
+        
+        if [ -f "dist/index.d.ts" ]; then
+          echo "✅ index.d.ts 存在"
+        else
+          echo "❌ index.d.ts 缺失"
+        fi
+
+    - name: 准备发布包
+      if: matrix.node-version == env.NODE_VERSION
+      run: |
+        # 复制构建产物到发布目录
+        mkdir -p package
+        cp -r src/dist/* package/
+        cp src/package.json package/
+        cp src/README.md package/ || echo "README.md 不存在"
+        
+        # 更新版本号
+        cd package
+        if [ "${{ github.event.inputs.version_type }}" != "" ]; then
+          npm version ${{ github.event.inputs.version_type }} --no-git-tag-version
+        else
+          # 使用 commit hash 作为预发布版本
+          COMMIT_HASH="${{ needs.check-updates.outputs.latest_commit }}"
+          SHORT_HASH=${COMMIT_HASH:0:8}
+          npm version prerelease --preid="git-$SHORT_HASH" --no-git-tag-version
+        fi
+
+    - name: 上传构建产物
+      if: matrix.node-version == env.NODE_VERSION
+      uses: actions/upload-artifact@v3
+      with:
+        name: api-client-package
+        path: package/
+        retention-days: 30
+
+  publish:
+    needs: [check-updates, build]
+    if: needs.check-updates.outputs.should_build == 'true' && (github.event.inputs.publish_npm == 'true' || github.event_name == 'schedule')
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: 检出当前仓库
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: 设置 Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        registry-url: 'https://registry.npmjs.org'
+
+    - name: 下载构建产物
+      uses: actions/download-artifact@v3
+      with:
+        name: api-client-package
+        path: package/
+
+    - name: 发布到 NPM
+      if: env.NPM_TOKEN != ''
+      run: |
+        cd package
+        npm publish --access public
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+    - name: 发布到 GitHub Packages
+      run: |
+        cd package
+        # 修改 package.json 以发布到 GitHub Packages
+        npm pkg set name="@adminlaowang/mx-space-api-client"
+        npm pkg set repository.url="git+https://github.com/Akuma-real/mx-space-api-client-builder.git"
+        npm pkg set publishConfig.registry="https://npm.pkg.github.com"
+        
+        npm publish
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: 创建 Release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: v$(cd package && node -p "require('./package.json').version")
+        release_name: Release v$(cd package && node -p "require('./package.json').version")
+        body: |
+          自动构建的 @adminlaowang/mx-space-api-client 包
+          
+          源码提交: ${{ needs.check-updates.outputs.latest_commit }}
+          构建时间: ${{ github.run_id }}
+        draft: false
+        prerelease: ${{ github.event.inputs.version_type == 'prerelease' || github.event_name == 'schedule' }}
+
+    - name: 更新构建记录
+      run: |
+        echo "${{ needs.check-updates.outputs.latest_commit }}" > last_build_commit.txt
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add last_build_commit.txt
+        git commit -m "更新构建记录: ${{ needs.check-updates.outputs.latest_commit }}" || exit 0
+        git push

@@ -1,0 +1,26 @@
+{
+  "name": "mx-space-api-client-builder",
+  "version": "1.0.0",
+  "description": "为 @mx-space/api-client 创建构建和发布系统，输出为 @adminlaowang/mx-space-api-client 包",
+  "private": true,
+  "scripts": {
+    "build": "./scripts/build.sh",
+    "test": "echo \"No tests specified\" && exit 0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Akuma-real/mx-space-api-client-builder.git"
+  },
+  "keywords": [
+    "mx-space",
+    "api-client",
+    "builder",
+    "github-actions",
+    "adminlaowang"
+  ],
+  "author": "adminlaowang",
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "^5.1.0"
+  }
+}
