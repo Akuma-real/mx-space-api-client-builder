@@ -235,18 +235,6 @@ jobs:
       env:
         NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-    - name: 发布到 GitHub Packages
-      run: |
-        cd package
-        # 修改 package.json 以发布到 GitHub Packages
-        npm pkg set name="@adminlaowang/mx-space-api-client"
-        npm pkg set repository.url="git+https://github.com/Akuma-real/mx-space-api-client-builder.git"
-        npm pkg set publishConfig.registry="https://npm.pkg.github.com"
-        
-        npm publish
-      env:
-        NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
     - name: 创建 Release
       uses: actions/create-release@v1
       env:
