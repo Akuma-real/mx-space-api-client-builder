@@ -121,7 +121,10 @@ jobs:
     - name: 安装依赖
       run: |
         cd src
+        # 安装项目依赖
         pnpm install
+        # 确保 TypeScript 可用（tsup 需要）
+        pnpm add -D typescript
 
     - name: 运行测试
       run: |
