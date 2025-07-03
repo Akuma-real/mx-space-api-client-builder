@@ -1,5 +1,9 @@
 name: Build and Publish API Client
 
+permissions:
+  contents: write
+  packages: write
+
 on:
   # 手动触发
   workflow_dispatch:
@@ -236,19 +240,25 @@ jobs:
         NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
     - name: 创建 Release
-      uses: actions/create-release@v1
+      run: |
+        cd package
+        VERSION=$(node -p "require('./package.json').version")
+        TAG_NAME="v$VERSION"
+        
+        # 创建 tag
+        git tag $TAG_NAME
+        git push origin $TAG_NAME
+        
+        # 创建 Release
+        gh release create $TAG_NAME \
+          --title "Release $TAG_NAME" \
+          --notes "自动构建的 @adminlaowang/mx-space-api-client 包
+
+        源码提交: ${{ needs.check-updates.outputs.latest_commit }}
+        构建时间: ${{ github.run_id }}" \
+          ${{ github.event.inputs.version_type == 'prerelease' || github.event_name == 'schedule' && '--prerelease' || '' }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: v$(cd package && node -p "require('./package.json').version")
-        release_name: Release v$(cd package && node -p "require('./package.json').version")
-        body: |
-          自动构建的 @adminlaowang/mx-space-api-client 包
-          
-          源码提交: ${{ needs.check-updates.outputs.latest_commit }}
-          构建时间: ${{ github.run_id }}
-        draft: false
-        prerelease: ${{ github.event.inputs.version_type == 'prerelease' || github.event_name == 'schedule' }}
 
     - name: 更新构建记录
       run: |
